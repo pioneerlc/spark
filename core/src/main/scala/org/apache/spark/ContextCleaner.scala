@@ -33,7 +33,7 @@ private case class CleanRDD(rddId: Int) extends CleanupTask
 private case class CleanShuffle(shuffleId: Int) extends CleanupTask
 private case class CleanBroadcast(broadcastId: Long) extends CleanupTask
 private case class CleanAccum(accId: Long) extends CleanupTask
-private case class CleanRDDCheckpointData(rddId: Int) extends CleanupTask
+private case class CleanRDDCheckpoint(rddId: Int) extends CleanupTask
 
 /**
  * A WeakReference associated with a CleanupTask.
@@ -132,7 +132,7 @@ private[spark] class ContextCleaner(sc: SparkContext) extends Logging {
 
   /** Register a RDDCheckpointData for cleanup when it is garbage collected. */
   def registerRDDCheckpointDataForCleanup[T](rdd: RDD[_], parentId: Int) {
-    registerForCleanup(rdd, CleanRDDCheckpointData(parentId))
+    registerForCleanup(rdd, CleanRDDCheckpoint(parentId))
   }
 
   /** Register an object for cleanup. */
@@ -158,7 +158,7 @@ private[spark] class ContextCleaner(sc: SparkContext) extends Logging {
               doCleanupBroadcast(broadcastId, blocking = blockOnCleanupTasks)
             case CleanAccum(accId) =>
               doCleanupAccum(accId, blocking = blockOnCleanupTasks)
-            case CleanRDDCheckpointData(rddId) =>
+            case CleanRDDCheckpoint(rddId) =>
               doCleanRDDCheckpointData(rddId, blocking = blockOnCleanupTasks)
           }
         }

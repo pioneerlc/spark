@@ -206,11 +206,7 @@ class ContextCleanerSuite extends ContextCleanerSuiteBase {
     postGCTester.assertCleanup()
   }
 
-  test("automatically cleanup checkpoint data") {
-    sc.stop()
-    val conf=new SparkConf().setMaster("local[2]").setAppName("cleanupCheckpointData").
-      set("spark.cleaner.referenceTracking.cleanCheckpoints","true")
-    sc = new SparkContext(conf)
+  test("automatically cleanup checkpoint") {
     val checkpointDir = java.io.File.createTempFile("temp", "")
     checkpointDir.deleteOnExit()
     checkpointDir.delete()
@@ -219,23 +215,41 @@ class ContextCleanerSuite extends ContextCleanerSuiteBase {
     rdd.checkpoint()
     rdd.cache()
     rdd.collect()
-    val rddId = rdd.id
+    var rddId = rdd.id
 
     // Confirm the checkpoint directory exists
-    RDDCheckpointData.rddCheckpointDataPath(sc, rddId).foreach { path =>
-      val fs = path.getFileSystem(sc.hadoopConfiguration)
-      assert(fs.exists(path))
-    }
+    assert(RDDCheckpointData.rddCheckpointDataPath(sc, rddId).isDefined)
+    val path = RDDCheckpointData.rddCheckpointDataPath(sc, rddId).get
+    val fs = path.getFileSystem(sc.hadoopConfiguration)
+    assert(fs.exists(path))
 
-    // Test that GC causes checkpoint data cleanup after dereferencing the RDD
-    val postGCTester = new CleanerTester(sc, Seq(rddId), Nil, Nil)
-    rdd = null  // Make RDD out of scope
+    // the checkpoint is not cleaned by default (without the configuration set)
+    var postGCTester = new CleanerTester(sc, Seq(rddId), Nil, Nil)
+    rdd = null // Make RDD out of scope
     runGC()
     postGCTester.assertCleanup()
-    RDDCheckpointData.rddCheckpointDataPath(sc, rddId).foreach { path =>
-      val fs = path.getFileSystem(sc.hadoopConfiguration)
-      assert(!fs.exists(path))
-    }
+    assert(fs.exists(RDDCheckpointData.rddCheckpointDataPath(sc, rddId).get))
+
+    sc.stop()
+    val conf = new SparkConf().setMaster("local[2]").setAppName("cleanupCheckpoint").
+      set("spark.cleaner.referenceTracking.cleanCheckpoints", "true")
+    sc = new SparkContext(conf)
+    rdd = newPairRDD
+    sc.setCheckpointDir(checkpointDir.toString)
+    rdd.checkpoint()
+    rdd.cache()
+    rdd.collect()
+    rddId = rdd.id
+
+    // Confirm the checkpoint directory exists
+    assert(fs.exists(RDDCheckpointData.rddCheckpointDataPath(sc, rddId).get))
+
+    // Test that GC causes checkpoint data cleanup after dereferencing the RDD
+    postGCTester = new CleanerTester(sc, Seq(rddId), Nil, Nil)
+    rdd = null // Make RDD out of scope
+    runGC()
+    postGCTester.assertCleanup()
+    assert(!fs.exists(RDDCheckpointData.rddCheckpointDataPath(sc, rddId).get))
   }
 
   test("automatically cleanup RDD + shuffle + broadcast") {
